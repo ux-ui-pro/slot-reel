@@ -116,6 +116,8 @@ class SlotReel {
     this.restTime = this.clock.getElapsedTime();
     this.wobbleStartTime = this.restTime;
 
+    document.body.classList.remove('is-spinning-going', 'is-spinning-stopped');
+
     requestAnimationFrame(this.animate.bind(this));
   }
 
@@ -213,10 +215,13 @@ class SlotReel {
   }
 
   private setInitialSegments(): void {
-    const segmentAngle = (2 * Math.PI) / this.options.cylinderSegments;
+    const { initialSegments, cylinderSegments } = this.options;
+    const segmentAngle = (2 * Math.PI) / cylinderSegments;
+    const correction = segmentAngle / 2;
 
     this.cylinders.forEach((cylinder, i) => {
-      cylinder.rotation.x = 2 * Math.PI - (this.options.initialSegments[i] - 1) * segmentAngle;
+      const segment = initialSegments[i];
+      cylinder.rotation.x = 2 * Math.PI - ((segment - 1) * segmentAngle + correction);
     });
   }
 
@@ -265,18 +270,26 @@ class SlotReel {
     let allStopped = true;
 
     this.cylinders.forEach((cylinder, i) => {
-      const remaining = this.targetAngles[i] - cylinder.rotation.x;
+      const currentAngle = cylinder.rotation.x;
+      const targetAngle = this.targetAngles[i];
+      const remainingDistance = targetAngle - currentAngle;
 
-      if (remaining > SlotReel.STOP_THRESHOLD) {
+      if (remainingDistance > SlotReel.STOP_THRESHOLD) {
         allStopped = false;
-        cylinder.rotation.x +=
-          this.currentSpeeds[i] * Math.min(1, remaining / (2 * Math.PI)) * deltaTime;
+
+        const decelerationFactor = Math.min(1, remainingDistance / (2 * Math.PI));
+
+        const speed = this.currentSpeeds[i] * decelerationFactor;
+
+        cylinder.rotation.x += speed * deltaTime;
       } else {
-        cylinder.rotation.x = this.targetAngles[i];
+        cylinder.rotation.x = targetAngle;
       }
     });
 
-    if (allStopped) this.finalizeSpin();
+    if (allStopped) {
+      this.finalizeSpin();
+    }
   }
 
   private finalizeSpin(): void {
@@ -288,15 +301,19 @@ class SlotReel {
     this.restTime = this.clock.getElapsedTime();
     this.wobbleStartTime = this.restTime;
 
-    document.body.classList.replace('is-spinning-going', 'is-spinning-stopped');
+    document.body.classList.remove('is-spinning-going');
+    document.body.classList.add('is-spinning-stopped');
 
-    this.currentSpinState?.callback?.();
+    if (this.currentSpinState && typeof this.currentSpinState.callback === 'function') {
+      this.currentSpinState.callback();
+    }
   }
 
   private startNextSpin(): void {
     if (this.currentState !== SlotReel.STATES.REST || !this.spinStates.length) return;
 
-    document.body.classList.replace('is-spinning-stopped', 'is-spinning-going');
+    document.body.classList.remove('is-spinning-stopped');
+    document.body.classList.add('is-spinning-going');
 
     this.currentSpinState = this.spinStates.shift() || null;
 
@@ -314,11 +331,14 @@ class SlotReel {
   private stopOnSegments(): void {
     const { finalSegments, cylinderSegments } = this.options;
     const segmentAngle = (2 * Math.PI) / cylinderSegments;
+    const segmentOffset = Math.PI / cylinderSegments;
 
     this.cylinders.forEach((cylinder, i) => {
-      const target = 2 * Math.PI - (finalSegments[i] - 1) * segmentAngle;
+      const segment = finalSegments[i];
+      const targetAngle = 2 * Math.PI - ((segment - 1) * segmentAngle + segmentOffset);
+      const fullRotations = Math.floor(cylinder.rotation.x / (2 * Math.PI)) + 2;
 
-      this.targetAngles[i] = target + Math.ceil(cylinder.rotation.x / (2 * Math.PI)) * 2 * Math.PI;
+      this.targetAngles[i] = targetAngle + fullRotations * 2 * Math.PI;
     });
 
     this.currentState = SlotReel.STATES.STOPPING;

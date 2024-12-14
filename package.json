@@ -1,6 +1,6 @@
 {
   "name": "slot-reel",
-  "version": "0.0.1-alpha.2",
+  "version": "0.0.1-alpha.3",
   "description": "The SlotReel class is a modular slot machine implementation using Three.js, enabling 3D interactive experiences in the browser. It supports customizable dimensions, spin speeds, and segment configurations, with smooth animations and idle wobble effects for enhanced realism and user engagement.",
   "author": "ux-ui.pro",
   "license": "MIT",
