@@ -22,6 +22,7 @@ $ yarn add slot-reel
 <br>
 
 &#10148; **Import**
+
 ```javascript
 import SlotReel from 'slot-reel';
 ```
