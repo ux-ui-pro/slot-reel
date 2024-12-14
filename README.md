@@ -9,7 +9,7 @@
 [![GitHub package version](https://img.shields.io/github/package-json/v/ux-ui-pro/slot-reel.svg)](https://github.com/ux-ui-pro/slot-reel)
 [![NPM Downloads](https://img.shields.io/npm/dm/slot-reel.svg?style=flat)](https://www.npmjs.org/package/slot-reel)
 
-<a href="https://codepen.io/ux-ui/pen/jENVZRY">Demo</a>
+<a href="https://codepen.io/ux-ui/pen/qEWqoLa">Demo</a>
 
 </div>
 <br>
