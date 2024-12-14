@@ -1,0 +1,64 @@
+{
+  "name": "slot-reel",
+  "version": "0.0.1-alpha.1",
+  "description": "The SlotReel class is a modular slot machine implementation using Three.js, enabling 3D interactive experiences in the browser. It supports customizable dimensions, spin speeds, and segment configurations, with smooth animations and idle wobble effects for enhanced realism and user engagement.",
+  "author": "ux-ui.pro",
+  "license": "MIT",
+  "repository": {
+    "type": "git",
+    "url": "git+https://github.com/ux-ui-pro/slot-reel.git"
+  },
+  "bugs": {
+    "url": "https://github.com/ux-ui-pro/slot-reel/issues"
+  },
+  "homepage": "https://github.com/ux-ui-pro/slot-reel",
+  "sideEffects": false,
+  "scripts": {
+    "clean": "rm -rf dist .parcel-cache",
+    "build": "yarn clean && parcel build",
+    "lint:js": "eslint **/*.js",
+    "lint:fix:js": "eslint **/*.js --fix",
+    "format:js": "prettier --write **/*.js",
+    "lint:fix": "yarn lint:fix:js && yarn format:js"
+  },
+  "browserslist": "> 0.5%, last 2 versions, not dead",
+  "source": "src/index.js",
+  "main": "dist/index.js",
+  "module": "dist/index.module.js",
+  "devDependencies": {
+    "@eslint/js": "9.12.0",
+    "eslint": "9.12.0",
+    "eslint-config-prettier": "9.1.0",
+    "eslint-plugin-import": "2.31.0",
+    "globals": "15.11.0",
+    "parcel": "2.13.2",
+    "prettier": "3.4.2"
+  },
+  "peerDependencies": {
+    "three": "0.171.0"
+  },
+  "keywords": [
+    "slot",
+    "machine",
+    "threejs",
+    "3d",
+    "game",
+    "webgl",
+    "javascript",
+    "browser",
+    "interactive",
+    "casino",
+    "animation",
+    "reels",
+    "modular",
+    "spin",
+    "ui",
+    "component",
+    "slot-machine",
+    "three-js",
+    "slot-reel",
+    "3d-slot",
+    "browser-game",
+    "webgl-game"
+  ]
+}
