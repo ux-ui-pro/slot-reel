@@ -67,6 +67,15 @@ export default [
       eslint: eslintPlugin,
       import: importPlugin,
     },
+    settings: {
+      'import/resolver': {
+        typescript: {
+          // Путь к вашему tsconfig.json
+          project: './tsconfig.json',
+          // Вы можете добавить другие настройки, если необходимо
+        },
+      },
+    },
     rules: {
       ...eslintPlugin.configs.recommended.rules,
       ...typescriptPlugin.configs.recommended.rules,
