@@ -70,9 +70,7 @@ export default [
     settings: {
       'import/resolver': {
         typescript: {
-          // Путь к вашему tsconfig.json
           project: './tsconfig.json',
-          // Вы можете добавить другие настройки, если необходимо
         },
       },
     },

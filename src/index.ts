@@ -28,8 +28,6 @@ interface SlotReelConfig {
   spinSpeedMultiplier: number;
   initialSegments: number[];
   spinStates: SpinState[];
-  width?: number;
-  height?: number;
   cameraDistance?: number;
 }
 
@@ -37,8 +35,6 @@ class SlotReel {
   static defaultOptions: Partial<SlotReelConfig> = {
     containerSelector: '',
     buttonSelector: '',
-    width: 700,
-    height: 250,
     cameraDistance: 10,
     textureURLs: [],
     cylinderGeometry: [1, 1, 1],
@@ -82,6 +78,9 @@ class SlotReel {
   private wobbleStartTime = 0;
   private wobbleEaseDuration = 1;
 
+  private resizeObserver!: ResizeObserver;
+  private resizeTimeout: number | undefined;
+
   constructor(options: Partial<SlotReelConfig> = {}) {
     this.options = { ...SlotReel.defaultOptions, ...options } as SlotReelConfig;
     this.currentSpeeds = [...(this.options.rotationSpeeds || [])];
@@ -89,19 +88,20 @@ class SlotReel {
   }
 
   async init(): Promise<void> {
-    const {
-      containerSelector,
-      width = 700,
-      height = 250,
-      cameraDistance = 10,
-      textureURLs,
-      buttonSelector,
-    } = this.options;
+    const { containerSelector, textureURLs, buttonSelector } = this.options;
 
     const container = this.validateElement(containerSelector);
 
+    if (!container) {
+      console.error(`Container with selector "${containerSelector}" not found.`);
+      return;
+    }
+
     this.scene = new Scene();
-    this.createCamera(width / height, 1, cameraDistance);
+
+    const { clientWidth: width, clientHeight: height } = container;
+
+    this.createCamera(width / height, 1, this.options.cameraDistance || 10);
     this.createRenderer(width, height, container);
 
     const textures = await this.loadTextures(textureURLs);
@@ -113,10 +113,13 @@ class SlotReel {
     );
 
     this.initializeSegments(buttonSelector);
+    this.storeRestAngles();
     this.restTime = this.clock.getElapsedTime();
     this.wobbleStartTime = this.restTime;
 
     document.body.classList.remove('is-spinning-going', 'is-spinning-stopped');
+
+    this.setupResizeObserver(container);
 
     requestAnimationFrame(this.animate.bind(this));
   }
@@ -125,6 +128,7 @@ class SlotReel {
     const element = document.querySelector(selector);
 
     if (!element) {
+      console.error(`Element with selector "${selector}" not found.`);
       return null;
     }
 
@@ -144,12 +148,12 @@ class SlotReel {
     this.camera.position.z = cameraDistance;
   }
 
-  private createRenderer(width: number, height: number, container: HTMLElement | null): void {
+  private createRenderer(width: number, height: number, container: HTMLElement): void {
     this.renderer = new WebGLRenderer({ antialias: true });
     this.renderer.setPixelRatio(window.devicePixelRatio);
     this.renderer.setSize(width, height);
 
-    container?.appendChild(this.renderer.domElement);
+    container.appendChild(this.renderer.domElement);
   }
 
   private async loadTextures(textureURLs: URL[]): Promise<Texture[]> {
@@ -344,10 +348,27 @@ class SlotReel {
     this.currentState = SlotReel.STATES.STOPPING;
   }
 
-  updateDimensions(width: number, height: number): void {
-    this.options.width = width;
-    this.options.height = height;
+  private setupResizeObserver(container: HTMLElement): void {
+    this.resizeObserver = new ResizeObserver((entries) => {
+      for (const entry of entries) {
+        if (entry.target === container) {
+          if (this.resizeTimeout) {
+            clearTimeout(this.resizeTimeout);
+          }
 
+          this.resizeTimeout = window.setTimeout(() => {
+            const { clientWidth: newWidth, clientHeight: newHeight } = container;
+            this.updateDimensions(newWidth, newHeight);
+            this.resizeTimeout = undefined;
+          }, 200);
+        }
+      }
+    });
+
+    this.resizeObserver.observe(container);
+  }
+
+  updateDimensions(width: number, height: number): void {
     const aspectRatio = width / height;
     const cameraSize = 1;
 
@@ -358,6 +379,7 @@ class SlotReel {
     this.camera.updateProjectionMatrix();
 
     this.renderer.setSize(width, height);
+
     this.positionCylinders(this.options.spacingRatio);
   }
 }

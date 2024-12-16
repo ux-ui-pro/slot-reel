@@ -33,8 +33,6 @@ import SlotReel from 'slot-reel';
 const slotReel = new SlotReel({
   containerSelector: '#slot-container',
   buttonSelector: '#spin-button',
-  width: 800,
-  height: 300,
   textureURLs: [
     'path/to/texture1.png',
     'path/to/texture2.png',
@@ -60,8 +58,6 @@ slotReel.init();
 |:--------------------|:------:|:---------:|:-----------------------------------------------|
 | containerSelector   | String |   null    | CSS selector for the container element.        |
 | buttonSelector      | String |   null    | CSS selector for the spin button.              |
-| width               | Number |    700    | Width of the slot game canvas.                 |
-| height              | Number |    250    | Height of the slot game canvas.                |
 | cameraDistance      | Number |    10     | Distance of the camera from the scene.         |
 | textureURLs         | Array  |    []     | Array of texture image URLs.                   |
 | cylinderGeometry    | Array  | [1, 1, 1] | Geometry settings for the cylinders.           |
