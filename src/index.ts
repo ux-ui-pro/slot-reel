@@ -93,7 +93,6 @@ class SlotReel {
     const container = this.validateElement(containerSelector);
 
     if (!container) {
-      console.error(`Container with selector "${containerSelector}" not found.`);
       return;
     }
 
@@ -114,6 +113,7 @@ class SlotReel {
 
     this.initializeSegments(buttonSelector);
     this.storeRestAngles();
+
     this.restTime = this.clock.getElapsedTime();
     this.wobbleStartTime = this.restTime;
 
@@ -128,7 +128,6 @@ class SlotReel {
     const element = document.querySelector(selector);
 
     if (!element) {
-      console.error(`Element with selector "${selector}" not found.`);
       return null;
     }
 
@@ -225,6 +224,7 @@ class SlotReel {
 
     this.cylinders.forEach((cylinder, i) => {
       const segment = initialSegments[i];
+
       cylinder.rotation.x = 2 * Math.PI - ((segment - 1) * segmentAngle + correction);
     });
   }
@@ -282,7 +282,6 @@ class SlotReel {
         allStopped = false;
 
         const decelerationFactor = Math.min(1, remainingDistance / (2 * Math.PI));
-
         const speed = this.currentSpeeds[i] * decelerationFactor;
 
         cylinder.rotation.x += speed * deltaTime;
@@ -358,6 +357,7 @@ class SlotReel {
 
           this.resizeTimeout = window.setTimeout(() => {
             const { clientWidth: newWidth, clientHeight: newHeight } = container;
+
             this.updateDimensions(newWidth, newHeight);
             this.resizeTimeout = undefined;
           }, 200);
