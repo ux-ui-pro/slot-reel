@@ -39,6 +39,7 @@ const slotReel = new SlotReel({
     'path/to/texture3.png',
     'path/to/texture3.png',
   ],
+  cylinderCount: 4,
   cylinderSegments: 5,
   initialSegments: [1, 2, 3, 3],
   spinStates: [
@@ -54,21 +55,22 @@ slotReel.init();
 
 &#10148; **Options**
 
-| Option              |  Type  |  Default  | Description                                    |
-|:--------------------|:------:|:---------:|:-----------------------------------------------|
-| containerSelector   | String |   null    | CSS selector for the container element.        |
-| buttonSelector      | String |   null    | CSS selector for the spin button.              |
-| cameraDistance      | Number |    10     | Distance of the camera from the scene.         |
-| textureURLs         | Array  |    []     | Array of texture image URLs.                   |
-| cylinderGeometry    | Array  | [1, 1, 1] | Geometry settings for the cylinders.           |
-| rotationSegments    | Number |    16     | Number of vertical segments on the cylinders.  |
-| cylinderSegments    | Number |     5     | Number of horizontal segments per cylinder.    |
-| spacingRatio        | Number |    0.1    | Spacing ratio between cylinders.               |
-| rotationSpeeds      | Array  |    []     | Initial rotation speeds for the cylinders.     |
-| spinSpeedMultiplier | Number |    20     | Multiplier for spin speed during spinning.     |
-| initialSegments     | Array  |    []     | Initial segment indices for each cylinder.     |
-| finalSegments       | Array  |    []     | Final segment indices for each cylinder.       |
-| spinStates          | Array  |    []     | Spin states with final segments and callbacks. |
+| Option              |  Type  |  Default  | Description                                                    |
+|:--------------------|:------:|:---------:|:---------------------------------------------------------------|
+| containerSelector   | String |   null    | CSS selector for the container element.                        |
+| buttonSelector      | String |   null    | CSS selector for the spin button.                              |
+| cameraDistance      | Number |    10     | Distance of the camera from the scene.                         |
+| textureURLs         | Array  |    []     | Array of texture image URLs.                                   |
+| cylinderGeometry    | Array  | [1, 1, 1] | Geometry settings for the cylinders.                           |
+| rotationSegments    | Number |    16     | Number of vertical segments on the cylinders.                  |
+| cylinderSegments    | Number |     5     | Number of horizontal segments per cylinder.                    |
+| spacingRatio        | Number |    0.1    | Spacing ratio between cylinders.                               |
+| rotationSpeeds      | Array  |    []     | Initial rotation speeds for the cylinders.                     |
+| spinSpeedMultiplier | Number |    20     | Multiplier for spin speed during spinning.                     |
+| initialSegments     | Array  |    []     | Initial segment indices for each cylinder.                     |
+| finalSegments       | Array  |    []     | Final segment indices for each cylinder.                       |
+| spinStates          | Array  |    []     | Spin states with final segments and callbacks.                 |
+| cylinderCount       | Number |     3     | Determines the number of cylinders displayed in the slot reel. |
 <br>
 
 &#10148; **Methods**

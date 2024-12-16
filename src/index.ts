@@ -29,6 +29,7 @@ interface SlotReelConfig {
   initialSegments: number[];
   spinStates: SpinState[];
   cameraDistance?: number;
+  cylinderCount: number;
 }
 
 class SlotReel {
@@ -45,6 +46,7 @@ class SlotReel {
     spinSpeedMultiplier: 20,
     initialSegments: [],
     spinStates: [],
+    cylinderCount: 3,
   };
 
   static STATES = Object.freeze({
@@ -83,7 +85,11 @@ class SlotReel {
 
   constructor(options: Partial<SlotReelConfig> = {}) {
     this.options = { ...SlotReel.defaultOptions, ...options } as SlotReelConfig;
-    this.currentSpeeds = [...(this.options.rotationSpeeds || [])];
+
+    this.currentSpeeds = Array(this.options.cylinderCount)
+      .fill(0)
+      .map((_, i) => this.options.rotationSpeeds[i % this.options.rotationSpeeds.length] || 0);
+
     this.spinStates = [...(this.options.spinStates || [])];
   }
 
@@ -171,7 +177,9 @@ class SlotReel {
   }
 
   private createCylinders(textures: Texture[]): void {
-    const { cylinderGeometry, rotationSegments, cylinderSegments, spacingRatio } = this.options;
+    const { cylinderGeometry, rotationSegments, cylinderSegments, spacingRatio, cylinderCount } =
+      this.options;
+
     const geometry = new CylinderGeometry(
       ...cylinderGeometry,
       rotationSegments,
@@ -179,7 +187,8 @@ class SlotReel {
       true,
     );
 
-    textures.forEach((texture) => {
+    for (let i = 0; i < cylinderCount; i++) {
+      const texture = textures[i % textures.length];
       const material = new MeshBasicMaterial({ map: texture });
       const cylinder = new Mesh(geometry, material);
 
@@ -187,7 +196,7 @@ class SlotReel {
 
       this.scene.add(cylinder);
       this.cylinders.push(cylinder);
-    });
+    }
 
     this.positionCylinders(spacingRatio);
   }
@@ -207,10 +216,10 @@ class SlotReel {
     if (buttonSelector) {
       const button = this.validateElement(buttonSelector);
 
-      button?.addEventListener('click', () => this.startNextSpin());
+      button?.addEventListener('pointerdown', () => this.startNextSpin());
     }
 
-    if (this.options.initialSegments?.length === this.cylinders.length) {
+    if (this.options.initialSegments?.length === this.options.cylinderCount) {
       this.setInitialSegments();
     }
 
@@ -322,7 +331,15 @@ class SlotReel {
 
     if (!this.currentSpinState) return;
 
-    this.options.finalSegments = this.currentSpinState.finalSegments;
+    if (this.currentSpinState.finalSegments.length !== this.options.cylinderCount) {
+      this.options.finalSegments = this.currentSpinState.finalSegments.slice(
+        0,
+        this.options.cylinderCount,
+      );
+    } else {
+      this.options.finalSegments = this.currentSpinState.finalSegments;
+    }
+
     this.currentState = SlotReel.STATES.SPINNING;
     this.currentSpeeds = this.currentSpeeds.map(
       (speed) => speed * this.options.spinSpeedMultiplier,
@@ -368,7 +385,7 @@ class SlotReel {
     this.resizeObserver.observe(container);
   }
 
-  updateDimensions(width: number, height: number): void {
+  private updateDimensions(width: number, height: number): void {
     const aspectRatio = width / height;
     const cameraSize = 1;
 
