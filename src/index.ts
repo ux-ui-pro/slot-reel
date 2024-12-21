@@ -5,8 +5,8 @@ import {
   MeshBasicMaterial,
   OrthographicCamera,
   Scene,
-  TextureLoader,
   Texture,
+  TextureLoader,
   WebGLRenderer,
 } from 'three';
 
@@ -15,16 +15,23 @@ type SpinState = {
   callback: () => void;
 };
 
-interface SlotReelConfig {
+interface CylinderState {
+  currentSpeed: number;
+  targetAngle: number | null;
+  status: 'rest' | 'spinning' | 'stopping';
+}
+
+export interface SlotReelConfig {
+  finalCallback?: () => void;
   finalSegments: number[];
   containerSelector: string;
   buttonSelector: string;
-  textureURLs: URL[];
+  textureURLs: (string | URL)[];
   cylinderGeometry: [number, number, number];
   rotationSegments: number;
   cylinderSegments: number;
   spacingRatio: number;
-  rotationSpeeds: number[];
+  rotationSpeed: number;
   spinSpeedMultiplier: number;
   initialSegments: number[];
   spinStates: SpinState[];
@@ -32,8 +39,8 @@ interface SlotReelConfig {
   cylinderCount: number;
 }
 
-class SlotReel {
-  static defaultOptions: Partial<SlotReelConfig> = {
+export class SlotReel {
+  static readonly defaultOptions: Partial<SlotReelConfig> = {
     containerSelector: '',
     buttonSelector: '',
     cameraDistance: 10,
@@ -42,21 +49,23 @@ class SlotReel {
     rotationSegments: 16,
     cylinderSegments: 5,
     spacingRatio: 0.1,
-    rotationSpeeds: [],
-    spinSpeedMultiplier: 20,
+    rotationSpeed: 1,
+    spinSpeedMultiplier: 30,
     initialSegments: [],
     spinStates: [],
     cylinderCount: 3,
+    finalCallback: undefined,
+    finalSegments: [],
   };
 
-  static STATES = Object.freeze({
-    REST: 'rest',
-    SPINNING: 'spinning',
-    STOPPING: 'stopping',
+  static readonly STATES = Object.freeze({
+    REST: 'rest' as const,
+    SPINNING: 'spinning' as const,
+    STOPPING: 'stopping' as const,
   });
 
-  static STOP_DELAY_MS = 2500;
-  static STOP_THRESHOLD = 0.003;
+  static readonly STOP_DELAY_MS = 2500;
+  static readonly STOP_DELAY_BETWEEN_CYLINDERS_MS = 250;
 
   private readonly options: SlotReelConfig;
   private scene!: Scene;
@@ -64,14 +73,10 @@ class SlotReel {
   private renderer!: WebGLRenderer;
   private cylinders: Mesh[] = [];
   private clock: Clock = new Clock();
-
-  private currentState: 'rest' | 'spinning' | 'stopping' = 'rest';
-  private currentSpeeds: number[] = [];
-  private targetAngles: number[] = [];
-
-  private spinStates: SpinState[] = [];
+  private readonly cylinderStates: CylinderState[] = [];
+  private currentGlobalState: 'rest' | 'spinning' | 'stopping' = SlotReel.STATES.REST;
+  private spinQueue: SpinState[] = [];
   private currentSpinState: SpinState | null = null;
-
   private restAngles: number[] = [];
   private restTime = 0;
   private amplitude = 0.1;
@@ -79,47 +84,46 @@ class SlotReel {
   private phaseOffsets: number[] = [];
   private wobbleStartTime = 0;
   private wobbleEaseDuration = 1;
-
   private resizeObserver!: ResizeObserver;
-  private resizeTimeout: number | undefined;
+  private resizeTimeout?: number;
+  private buttonElement: HTMLButtonElement | null = null;
 
   constructor(options: Partial<SlotReelConfig> = {}) {
     this.options = { ...SlotReel.defaultOptions, ...options } as SlotReelConfig;
 
-    this.currentSpeeds = Array(this.options.cylinderCount)
-      .fill(0)
-      .map((_, i) => this.options.rotationSpeeds[i % this.options.rotationSpeeds.length] || 0);
+    this.cylinderStates = Array.from({ length: this.options.cylinderCount }, () => ({
+      currentSpeed: this.options.rotationSpeed,
+      targetAngle: null,
+      status: SlotReel.STATES.REST,
+    }));
 
-    this.spinStates = [...(this.options.spinStates || [])];
+    this.spinQueue = [...(this.options.spinStates ?? [])];
   }
 
   async init(): Promise<void> {
-    const { containerSelector, textureURLs, buttonSelector } = this.options;
+    const container = this.validateElement<HTMLDivElement>(this.options.containerSelector);
 
-    const container = this.validateElement(containerSelector);
-
-    if (!container) {
-      return;
-    }
+    if (!container) return;
 
     this.scene = new Scene();
 
     const { clientWidth: width, clientHeight: height } = container;
 
-    this.createCamera(width / height, 1, this.options.cameraDistance || 10);
+    this.createCamera(width / height, 1, this.options.cameraDistance ?? 10);
     this.createRenderer(width, height, container);
 
-    const textures = await this.loadTextures(textureURLs);
+    const textures = await this.loadTextures(this.options.textureURLs);
 
     this.createCylinders(textures);
-    this.phaseOffsets = Array.from(
-      { length: this.cylinders.length },
-      () => Math.random() * Math.PI * 2,
-    );
+    this.positionCylinders(this.options.spacingRatio);
+    this.phaseOffsets = this.cylinders.map(() => Math.random() * Math.PI * 2);
+    this.initButton(this.options.buttonSelector);
 
-    this.initializeSegments(buttonSelector);
+    if (this.options.initialSegments?.length === this.options.cylinderCount) {
+      this.setInitialSegments();
+    }
+
     this.storeRestAngles();
-
     this.restTime = this.clock.getElapsedTime();
     this.wobbleStartTime = this.restTime;
 
@@ -127,17 +131,11 @@ class SlotReel {
 
     this.setupResizeObserver(container);
 
-    requestAnimationFrame(this.animate.bind(this));
+    requestAnimationFrame(this.animate);
   }
 
-  private validateElement(selector: string): HTMLElement | null {
-    const element = document.querySelector(selector);
-
-    if (!element) {
-      return null;
-    }
-
-    return element as HTMLElement;
+  private validateElement<T extends HTMLElement>(selector: string): T | null {
+    return (document.querySelector(selector) as T) ?? null;
   }
 
   private createCamera(aspectRatio: number, cameraSize: number, cameraDistance: number): void {
@@ -149,7 +147,6 @@ class SlotReel {
       0.1,
       1000,
     );
-
     this.camera.position.z = cameraDistance;
   }
 
@@ -161,24 +158,23 @@ class SlotReel {
     container.appendChild(this.renderer.domElement);
   }
 
-  private async loadTextures(textureURLs: URL[]): Promise<Texture[]> {
+  private async loadTextures(textureURLs: (string | URL)[]): Promise<Texture[]> {
     const loader = new TextureLoader();
+    const promises = textureURLs.map(async (urlLike) => {
+      const url = urlLike instanceof URL ? urlLike.toString() : urlLike;
+      const texture = await loader.loadAsync(url);
 
-    return Promise.all(
-      textureURLs.map((url) =>
-        loader.loadAsync(url.toString()).then((texture) => {
-          texture.rotation = (3 * Math.PI) / 2;
-          texture.center.set(0.5, 0.5);
+      texture.rotation = (3 * Math.PI) / 2;
+      texture.center.set(0.5, 0.5);
 
-          return texture;
-        }),
-      ),
-    );
+      return texture;
+    });
+
+    return Promise.all(promises);
   }
 
   private createCylinders(textures: Texture[]): void {
-    const { cylinderGeometry, rotationSegments, cylinderSegments, spacingRatio, cylinderCount } =
-      this.options;
+    const { cylinderGeometry, rotationSegments, cylinderSegments, cylinderCount } = this.options;
 
     const geometry = new CylinderGeometry(
       ...cylinderGeometry,
@@ -197,13 +193,12 @@ class SlotReel {
       this.scene.add(cylinder);
       this.cylinders.push(cylinder);
     }
-
-    this.positionCylinders(spacingRatio);
   }
 
   private positionCylinders(spacingRatio: number): void {
     const totalWidth = this.camera.right - this.camera.left;
-    const scale = totalWidth / (this.cylinders.length + spacingRatio * (this.cylinders.length - 1));
+    const count = this.cylinders.length;
+    const scale = totalWidth / (count + spacingRatio * (count - 1));
     const spacing = scale * spacingRatio;
 
     this.cylinders.forEach((cylinder, index) => {
@@ -212,29 +207,22 @@ class SlotReel {
     });
   }
 
-  private initializeSegments(buttonSelector?: string): void {
-    if (buttonSelector) {
-      const button = this.validateElement(buttonSelector);
+  private initButton(selector?: string): void {
+    if (!selector) return;
 
-      button?.addEventListener('pointerdown', () => this.startNextSpin());
-    }
+    const button = this.validateElement<HTMLButtonElement>(selector);
 
-    if (this.options.initialSegments?.length === this.options.cylinderCount) {
-      this.setInitialSegments();
-    }
+    if (!button) return;
 
-    this.storeRestAngles();
+    this.buttonElement = button;
+    this.buttonElement.addEventListener('pointerdown', this.startNextSpin);
   }
 
   private setInitialSegments(): void {
-    const { initialSegments, cylinderSegments } = this.options;
-    const segmentAngle = (2 * Math.PI) / cylinderSegments;
-    const correction = segmentAngle / 2;
+    const { initialSegments } = this.options;
 
     this.cylinders.forEach((cylinder, i) => {
-      const segment = initialSegments[i];
-
-      cylinder.rotation.x = 2 * Math.PI - ((segment - 1) * segmentAngle + correction);
+      cylinder.rotation.x = this.getSegmentAngle(initialSegments[i]);
     });
   }
 
@@ -242,73 +230,108 @@ class SlotReel {
     this.restAngles = this.cylinders.map((cylinder) => cylinder.rotation.x);
   }
 
-  private animate(): void {
+  private animate = (): void => {
     const deltaTime = this.clock.getDelta();
     const currentTime = this.clock.getElapsedTime();
 
-    if (this.currentState === SlotReel.STATES.SPINNING) {
-      this.updateSpinningCylinders(deltaTime);
-    } else if (this.currentState === SlotReel.STATES.STOPPING) {
-      this.updateStoppingCylinders(deltaTime);
-    } else {
-      this.wobbleCylinders(currentTime);
+    this.cylinders.forEach((cylinder, i) => {
+      const state = this.cylinderStates[i];
+
+      switch (state.status) {
+        case SlotReel.STATES.SPINNING:
+          cylinder.rotation.x += state.currentSpeed * deltaTime;
+          break;
+
+        case SlotReel.STATES.STOPPING:
+          if (state.targetAngle !== null) {
+            const diff = state.targetAngle - cylinder.rotation.x;
+
+            if (Math.abs(diff) < 0.0001) {
+              cylinder.rotation.x = state.targetAngle;
+              state.status = SlotReel.STATES.REST;
+            } else {
+              const decelerationFactor = Math.min(1, Math.abs(diff) / (2 * Math.PI));
+              const speed = state.currentSpeed * decelerationFactor;
+              cylinder.rotation.x += Math.sign(diff) * speed * deltaTime;
+            }
+          }
+          break;
+
+        case SlotReel.STATES.REST:
+          if (this.currentGlobalState === SlotReel.STATES.REST) {
+            const elapsed = currentTime - this.wobbleStartTime;
+            const easedAmplitude = Math.min(
+              this.amplitude,
+              (elapsed / this.wobbleEaseDuration) * this.amplitude,
+            );
+
+            cylinder.rotation.x =
+              this.restAngles[i] +
+              easedAmplitude * Math.sin(currentTime * this.frequency + this.phaseOffsets[i]);
+          }
+          break;
+
+        default:
+          break;
+      }
+    });
+
+    if (this.currentGlobalState === SlotReel.STATES.STOPPING) {
+      const allRest = this.cylinderStates.every((cs) => cs.status === SlotReel.STATES.REST);
+
+      if (allRest) {
+        this.finalizeSpin();
+      }
     }
 
     this.renderer.render(this.scene, this.camera);
 
-    requestAnimationFrame(this.animate.bind(this));
-  }
+    requestAnimationFrame(this.animate);
+  };
 
-  private wobbleCylinders(currentTime: number): void {
-    const elapsed = currentTime - this.wobbleStartTime;
-    const easedAmplitude = Math.min(
-      this.amplitude,
-      (elapsed / this.wobbleEaseDuration) * this.amplitude,
-    );
+  private startNextSpin = (): void => {
+    if (this.currentGlobalState !== SlotReel.STATES.REST || !this.spinQueue.length) return;
 
-    this.cylinders.forEach((cylinder, i) => {
-      cylinder.rotation.x =
-        this.restAngles[i] +
-        easedAmplitude * Math.sin(currentTime * this.frequency + this.phaseOffsets[i]);
-    });
-  }
+    document.body.classList.remove('is-spinning-stopped');
+    document.body.classList.add('is-spinning-going');
 
-  private updateSpinningCylinders(deltaTime: number): void {
-    this.cylinders.forEach((cylinder, i) => {
-      cylinder.rotation.x += this.currentSpeeds[i] * deltaTime;
-    });
-  }
+    this.currentSpinState = this.spinQueue.shift() ?? null;
 
-  private updateStoppingCylinders(deltaTime: number): void {
-    let allStopped = true;
+    if (!this.currentSpinState) return;
 
-    this.cylinders.forEach((cylinder, i) => {
-      const currentAngle = cylinder.rotation.x;
-      const targetAngle = this.targetAngles[i];
-      const remainingDistance = targetAngle - currentAngle;
+    this.currentGlobalState = SlotReel.STATES.SPINNING;
 
-      if (remainingDistance > SlotReel.STOP_THRESHOLD) {
-        allStopped = false;
-
-        const decelerationFactor = Math.min(1, remainingDistance / (2 * Math.PI));
-        const speed = this.currentSpeeds[i] * decelerationFactor;
-
-        cylinder.rotation.x += speed * deltaTime;
-      } else {
-        cylinder.rotation.x = targetAngle;
-      }
+    this.cylinderStates.forEach((state) => {
+      state.currentSpeed = this.options.rotationSpeed * this.options.spinSpeedMultiplier;
+      state.status = SlotReel.STATES.SPINNING;
     });
 
-    if (allStopped) {
-      this.finalizeSpin();
-    }
-  }
+    const finalSegments =
+      this.currentSpinState.finalSegments.length === this.options.cylinderCount
+        ? this.currentSpinState.finalSegments
+        : this.currentSpinState.finalSegments.slice(0, this.options.cylinderCount);
+
+    this.options.finalSegments = finalSegments;
+
+    setTimeout(() => {
+      this.currentGlobalState = SlotReel.STATES.STOPPING;
+
+      this.cylinders.forEach((cylinder, i) => {
+        setTimeout(() => {
+          const state = this.cylinderStates[i];
+          const segment = finalSegments[i];
+          const targetAngle = this.getSegmentAngle(segment);
+          const fullRotations = Math.floor(cylinder.rotation.x / (2 * Math.PI)) + 2;
+
+          state.targetAngle = targetAngle + fullRotations * 2 * Math.PI;
+          state.status = SlotReel.STATES.STOPPING;
+        }, i * SlotReel.STOP_DELAY_BETWEEN_CYLINDERS_MS);
+      });
+    }, SlotReel.STOP_DELAY_MS);
+  };
 
   private finalizeSpin(): void {
-    this.currentState = SlotReel.STATES.REST;
-    this.currentSpeeds = this.currentSpeeds.map(
-      (speed) => speed / this.options.spinSpeedMultiplier,
-    );
+    this.currentGlobalState = SlotReel.STATES.REST;
     this.storeRestAngles();
     this.restTime = this.clock.getElapsedTime();
     this.wobbleStartTime = this.restTime;
@@ -316,52 +339,27 @@ class SlotReel {
     document.body.classList.remove('is-spinning-going');
     document.body.classList.add('is-spinning-stopped');
 
-    if (this.currentSpinState && typeof this.currentSpinState.callback === 'function') {
-      this.currentSpinState.callback();
+    this.currentSpinState?.callback();
+
+    if (!this.spinQueue.length && this.buttonElement) {
+      this.buttonElement.removeEventListener('pointerdown', this.startNextSpin);
+
+      if (this.options.finalCallback) {
+        this.buttonElement.addEventListener('click', (event) => {
+          event.preventDefault();
+
+          this.options.finalCallback?.();
+        });
+      }
     }
   }
 
-  private startNextSpin(): void {
-    if (this.currentState !== SlotReel.STATES.REST || !this.spinStates.length) return;
-
-    document.body.classList.remove('is-spinning-stopped');
-    document.body.classList.add('is-spinning-going');
-
-    this.currentSpinState = this.spinStates.shift() || null;
-
-    if (!this.currentSpinState) return;
-
-    if (this.currentSpinState.finalSegments.length !== this.options.cylinderCount) {
-      this.options.finalSegments = this.currentSpinState.finalSegments.slice(
-        0,
-        this.options.cylinderCount,
-      );
-    } else {
-      this.options.finalSegments = this.currentSpinState.finalSegments;
-    }
-
-    this.currentState = SlotReel.STATES.SPINNING;
-    this.currentSpeeds = this.currentSpeeds.map(
-      (speed) => speed * this.options.spinSpeedMultiplier,
-    );
-
-    setTimeout(() => this.stopOnSegments(), SlotReel.STOP_DELAY_MS);
-  }
-
-  private stopOnSegments(): void {
-    const { finalSegments, cylinderSegments } = this.options;
+  private getSegmentAngle(segment: number): number {
+    const { cylinderSegments } = this.options;
     const segmentAngle = (2 * Math.PI) / cylinderSegments;
-    const segmentOffset = Math.PI / cylinderSegments;
+    const offset = segmentAngle / 2;
 
-    this.cylinders.forEach((cylinder, i) => {
-      const segment = finalSegments[i];
-      const targetAngle = 2 * Math.PI - ((segment - 1) * segmentAngle + segmentOffset);
-      const fullRotations = Math.floor(cylinder.rotation.x / (2 * Math.PI)) + 2;
-
-      this.targetAngles[i] = targetAngle + fullRotations * 2 * Math.PI;
-    });
-
-    this.currentState = SlotReel.STATES.STOPPING;
+    return 2 * Math.PI - ((segment - 1) * segmentAngle + offset);
   }
 
   private setupResizeObserver(container: HTMLElement): void {
@@ -373,11 +371,9 @@ class SlotReel {
           }
 
           this.resizeTimeout = window.setTimeout(() => {
-            const { clientWidth: newWidth, clientHeight: newHeight } = container;
-
-            this.updateDimensions(newWidth, newHeight);
+            this.onResize(container);
             this.resizeTimeout = undefined;
-          }, 200);
+          }, 150);
         }
       }
     });
@@ -385,8 +381,9 @@ class SlotReel {
     this.resizeObserver.observe(container);
   }
 
-  private updateDimensions(width: number, height: number): void {
-    const aspectRatio = width / height;
+  private onResize(container: HTMLElement): void {
+    const { clientWidth: newWidth, clientHeight: newHeight } = container;
+    const aspectRatio = newWidth / newHeight;
     const cameraSize = 1;
 
     this.camera.left = -cameraSize * aspectRatio;
@@ -395,8 +392,7 @@ class SlotReel {
     this.camera.bottom = -cameraSize;
     this.camera.updateProjectionMatrix();
 
-    this.renderer.setSize(width, height);
-
+    this.renderer.setSize(newWidth, newHeight);
     this.positionCylinders(this.options.spacingRatio);
   }
 }
