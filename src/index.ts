@@ -11,7 +11,7 @@ import {
 } from 'three';
 
 type SpinState = {
-  finalSegments: number[];
+  stopAtSegments: number[];
   callback: () => void;
 };
 
@@ -22,40 +22,44 @@ interface CylinderState {
 }
 
 export interface SlotReelConfig {
-  finalCallback?: () => void;
-  finalSegments: number[];
-  containerSelector: string;
-  buttonSelector: string;
-  textureURLs: (string | URL)[];
-  cylinderGeometry: [number, number, number];
-  rotationSegments: number;
-  cylinderSegments: number;
-  spacingRatio: number;
-  rotationSpeed: number;
-  spinSpeedMultiplier: number;
+  onAllSpinsComplete?: () => void;
+  stopAtSegments: number[];
+  containerElSelector: string;
+  spinButtonSelector: string;
+  textureUrls: (string | URL)[];
+  geometryDimensions: [number, number, number];
+  radialSegments: number;
+  symbolsPerReel: number;
+  cylinderSpacingRatio: number;
+  baseSpinSpeed: number;
+  spinAccelFactor: number;
   initialSegments: number[];
-  spinStates: SpinState[];
+  queuedSpinStates: SpinState[];
   cameraDistance?: number;
-  cylinderCount: number;
+  cylindersCount: number;
+  decelerationEase?: number;
+  cylinderStopDelayMs?: number;
 }
 
 export class SlotReel {
   static readonly defaultOptions: Partial<SlotReelConfig> = {
-    containerSelector: '',
-    buttonSelector: '',
+    containerElSelector: '',
+    spinButtonSelector: '',
     cameraDistance: 10,
-    textureURLs: [],
-    cylinderGeometry: [1, 1, 1],
-    rotationSegments: 16,
-    cylinderSegments: 5,
-    spacingRatio: 0.1,
-    rotationSpeed: 1,
-    spinSpeedMultiplier: 30,
+    textureUrls: [],
+    geometryDimensions: [1, 1, 1],
+    radialSegments: 16,
+    symbolsPerReel: 5,
+    cylinderSpacingRatio: 0,
+    baseSpinSpeed: 1,
+    spinAccelFactor: 30,
     initialSegments: [],
-    spinStates: [],
-    cylinderCount: 3,
-    finalCallback: undefined,
-    finalSegments: [],
+    queuedSpinStates: [],
+    cylindersCount: 3,
+    onAllSpinsComplete: undefined,
+    stopAtSegments: [],
+    decelerationEase: 1.5,
+    cylinderStopDelayMs: 250,
   };
 
   static readonly STATES = Object.freeze({
@@ -63,9 +67,6 @@ export class SlotReel {
     SPINNING: 'spinning' as const,
     STOPPING: 'stopping' as const,
   });
-
-  static readonly STOP_DELAY_MS = 2500;
-  static readonly STOP_DELAY_BETWEEN_CYLINDERS_MS = 250;
 
   private readonly options: SlotReelConfig;
   private scene!: Scene;
@@ -91,17 +92,17 @@ export class SlotReel {
   constructor(options: Partial<SlotReelConfig> = {}) {
     this.options = { ...SlotReel.defaultOptions, ...options } as SlotReelConfig;
 
-    this.cylinderStates = Array.from({ length: this.options.cylinderCount }, () => ({
-      currentSpeed: this.options.rotationSpeed,
+    this.cylinderStates = Array.from({ length: this.options.cylindersCount }, () => ({
+      currentSpeed: this.options.baseSpinSpeed,
       targetAngle: null,
       status: SlotReel.STATES.REST,
     }));
 
-    this.spinQueue = [...(this.options.spinStates ?? [])];
+    this.spinQueue = [...(this.options.queuedSpinStates ?? [])];
   }
 
   async init(): Promise<void> {
-    const container = this.validateElement<HTMLDivElement>(this.options.containerSelector);
+    const container = this.validateElement<HTMLDivElement>(this.options.containerElSelector);
 
     if (!container) return;
 
@@ -112,14 +113,14 @@ export class SlotReel {
     this.createCamera(width / height, 1, this.options.cameraDistance ?? 10);
     this.createRenderer(width, height, container);
 
-    const textures = await this.loadTextures(this.options.textureURLs);
+    const textures = await this.loadTextures(this.options.textureUrls);
 
     this.createCylinders(textures);
-    this.positionCylinders(this.options.spacingRatio);
+    this.positionCylinders(this.options.cylinderSpacingRatio);
     this.phaseOffsets = this.cylinders.map(() => Math.random() * Math.PI * 2);
-    this.initButton(this.options.buttonSelector);
+    this.initButton(this.options.spinButtonSelector);
 
-    if (this.options.initialSegments?.length === this.options.cylinderCount) {
+    if (this.options.initialSegments?.length === this.options.cylindersCount) {
       this.setInitialSegments();
     }
 
@@ -147,6 +148,7 @@ export class SlotReel {
       0.1,
       1000,
     );
+
     this.camera.position.z = cameraDistance;
   }
 
@@ -158,9 +160,10 @@ export class SlotReel {
     container.appendChild(this.renderer.domElement);
   }
 
-  private async loadTextures(textureURLs: (string | URL)[]): Promise<Texture[]> {
+  private async loadTextures(textureUrls: (string | URL)[]): Promise<Texture[]> {
     const loader = new TextureLoader();
-    const promises = textureURLs.map(async (urlLike) => {
+
+    const promises = textureUrls.map(async (urlLike) => {
       const url = urlLike instanceof URL ? urlLike.toString() : urlLike;
       const texture = await loader.loadAsync(url);
 
@@ -174,16 +177,16 @@ export class SlotReel {
   }
 
   private createCylinders(textures: Texture[]): void {
-    const { cylinderGeometry, rotationSegments, cylinderSegments, cylinderCount } = this.options;
+    const { geometryDimensions, radialSegments, symbolsPerReel, cylindersCount } = this.options;
 
     const geometry = new CylinderGeometry(
-      ...cylinderGeometry,
-      rotationSegments,
-      cylinderSegments,
+      ...geometryDimensions,
+      radialSegments,
+      symbolsPerReel,
       true,
     );
 
-    for (let i = 0; i < cylinderCount; i++) {
+    for (let i = 0; i < cylindersCount; i++) {
       const texture = textures[i % textures.length];
       const material = new MeshBasicMaterial({ map: texture });
       const cylinder = new Mesh(geometry, material);
@@ -195,11 +198,11 @@ export class SlotReel {
     }
   }
 
-  private positionCylinders(spacingRatio: number): void {
+  private positionCylinders(cylinderSpacingRatio: number): void {
     const totalWidth = this.camera.right - this.camera.left;
     const count = this.cylinders.length;
-    const scale = totalWidth / (count + spacingRatio * (count - 1));
-    const spacing = scale * spacingRatio;
+    const scale = totalWidth / (count + cylinderSpacingRatio * (count - 1));
+    const spacing = scale * cylinderSpacingRatio;
 
     this.cylinders.forEach((cylinder, index) => {
       cylinder.scale.set(scale, scale, scale);
@@ -246,12 +249,14 @@ export class SlotReel {
           if (state.targetAngle !== null) {
             const diff = state.targetAngle - cylinder.rotation.x;
 
-            if (Math.abs(diff) < 0.0001) {
+            if (Math.abs(diff) < 0.0025) {
               cylinder.rotation.x = state.targetAngle;
               state.status = SlotReel.STATES.REST;
             } else {
-              const decelerationFactor = Math.min(1, Math.abs(diff) / (2 * Math.PI));
+              const smoothness = this.options.decelerationEase ?? 1.75;
+              const decelerationFactor = Math.min(1, Math.abs(diff) / (smoothness * 2 * Math.PI));
               const speed = state.currentSpeed * decelerationFactor;
+
               cylinder.rotation.x += Math.sign(diff) * speed * deltaTime;
             }
           }
@@ -302,32 +307,35 @@ export class SlotReel {
     this.currentGlobalState = SlotReel.STATES.SPINNING;
 
     this.cylinderStates.forEach((state) => {
-      state.currentSpeed = this.options.rotationSpeed * this.options.spinSpeedMultiplier;
+      state.currentSpeed = this.options.baseSpinSpeed * this.options.spinAccelFactor;
       state.status = SlotReel.STATES.SPINNING;
     });
 
-    const finalSegments =
-      this.currentSpinState.finalSegments.length === this.options.cylinderCount
-        ? this.currentSpinState.finalSegments
-        : this.currentSpinState.finalSegments.slice(0, this.options.cylinderCount);
+    const stopAtSegments =
+      this.currentSpinState.stopAtSegments.length === this.options.cylindersCount
+        ? this.currentSpinState.stopAtSegments
+        : this.currentSpinState.stopAtSegments.slice(0, this.options.cylindersCount);
 
-    this.options.finalSegments = finalSegments;
+    this.options.stopAtSegments = stopAtSegments;
 
     setTimeout(() => {
       this.currentGlobalState = SlotReel.STATES.STOPPING;
 
       this.cylinders.forEach((cylinder, i) => {
-        setTimeout(() => {
-          const state = this.cylinderStates[i];
-          const segment = finalSegments[i];
-          const targetAngle = this.getSegmentAngle(segment);
-          const fullRotations = Math.floor(cylinder.rotation.x / (2 * Math.PI)) + 2;
+        setTimeout(
+          () => {
+            const state = this.cylinderStates[i];
+            const segment = stopAtSegments[i];
+            const targetAngle = this.getSegmentAngle(segment);
+            const fullRotations = Math.floor(cylinder.rotation.x / (2 * Math.PI)) + 2;
 
-          state.targetAngle = targetAngle + fullRotations * 2 * Math.PI;
-          state.status = SlotReel.STATES.STOPPING;
-        }, i * SlotReel.STOP_DELAY_BETWEEN_CYLINDERS_MS);
+            state.targetAngle = targetAngle + fullRotations * 2 * Math.PI;
+            state.status = SlotReel.STATES.STOPPING;
+          },
+          i * (this.options.cylinderStopDelayMs ?? 250),
+        );
       });
-    }, SlotReel.STOP_DELAY_MS);
+    }, 2000);
   };
 
   private finalizeSpin(): void {
@@ -344,19 +352,19 @@ export class SlotReel {
     if (!this.spinQueue.length && this.buttonElement) {
       this.buttonElement.removeEventListener('pointerdown', this.startNextSpin);
 
-      if (this.options.finalCallback) {
+      if (this.options.onAllSpinsComplete) {
         this.buttonElement.addEventListener('click', (event) => {
           event.preventDefault();
 
-          this.options.finalCallback?.();
+          this.options.onAllSpinsComplete?.();
         });
       }
     }
   }
 
   private getSegmentAngle(segment: number): number {
-    const { cylinderSegments } = this.options;
-    const segmentAngle = (2 * Math.PI) / cylinderSegments;
+    const { symbolsPerReel } = this.options;
+    const segmentAngle = (2 * Math.PI) / symbolsPerReel;
     const offset = segmentAngle / 2;
 
     return 2 * Math.PI - ((segment - 1) * segmentAngle + offset);
@@ -393,7 +401,7 @@ export class SlotReel {
     this.camera.updateProjectionMatrix();
 
     this.renderer.setSize(newWidth, newHeight);
-    this.positionCylinders(this.options.spacingRatio);
+    this.positionCylinders(this.options.cylinderSpacingRatio);
   }
 }
 
