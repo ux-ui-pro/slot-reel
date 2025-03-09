@@ -21,7 +21,7 @@ interface CylinderState {
   status: 'rest' | 'spinning' | 'stopping';
 }
 
-export interface SlotReelConfig {
+interface SlotReelConfig {
   onAllSpinsComplete?: () => void;
   stopAtSegments: number[];
   containerElSelector: string;
@@ -41,7 +41,7 @@ export interface SlotReelConfig {
   cylinderStopDelayMs?: number;
 }
 
-export class SlotReel {
+class SlotReel {
   static readonly defaultOptions: Partial<SlotReelConfig> = {
     containerElSelector: '',
     spinButtonSelector: '',
@@ -243,6 +243,7 @@ export class SlotReel {
       switch (state.status) {
         case SlotReel.STATES.SPINNING:
           cylinder.rotation.x += state.currentSpeed * deltaTime;
+
           break;
 
         case SlotReel.STATES.STOPPING:
@@ -391,6 +392,7 @@ export class SlotReel {
 
   private onResize(container: HTMLElement): void {
     const { clientWidth: newWidth, clientHeight: newHeight } = container;
+
     const aspectRatio = newWidth / newHeight;
     const cameraSize = 1;
 
@@ -401,8 +403,15 @@ export class SlotReel {
     this.camera.updateProjectionMatrix();
 
     this.renderer.setSize(newWidth, newHeight);
+
     this.positionCylinders(this.options.cylinderSpacingRatio);
   }
 }
+
+/* eslint-disable @typescript-eslint/no-namespace, no-redeclare */
+namespace SlotReel {
+  export type Config = SlotReelConfig;
+}
+/* eslint-enable @typescript-eslint/no-namespace, no-redeclare */
 
 export default SlotReel;

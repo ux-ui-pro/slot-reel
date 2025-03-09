@@ -18,10 +18,8 @@ export default defineConfig({
       formats: ['es', 'cjs', 'umd'],
       fileName: (format) => `index.${format}.js`,
     },
+    emptyOutDir: true,
     rollupOptions: {
-      output: {
-        exports: 'named',
-      },
       plugins: [
         terser({
           compress: {
@@ -40,6 +38,9 @@ export default defineConfig({
           },
         }),
       ],
+      output: {
+        assetFileNames: 'index.[ext]',
+      },
     },
   },
   server: {

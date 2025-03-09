@@ -26,6 +26,11 @@ yarn add slot-reel
 ```javascript
 import SlotReel from 'slot-reel';
 ```
+
+<sub>For CommonJS environments, you may need to access the default export explicitly:</sub>
+```javascript
+const SlotReel = require('slot-reel').default;
+```
 <br>
 
 &#10148; **Usage**
